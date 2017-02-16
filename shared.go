@@ -18,8 +18,11 @@ package jose
 
 import (
 	"crypto/elliptic"
+	"crypto/x509"
+	"encoding/base64"
 	"errors"
 	"fmt"
+	"log"
 )
 
 // KeyAlgorithm represents a key management algorithm.
@@ -133,6 +136,7 @@ type rawHeader struct {
 	Nonce string               `json:"nonce,omitempty"`
 	Typ   string               `json:"typ,omitempty"`
 	Cty   string               `json:"cty,omitempty"`
+	X5c   []string             `json:"x5c,omitempty"`
 }
 
 // Header represents the read-only JOSE header for JWE/JWS objects.
@@ -143,6 +147,7 @@ type Header struct {
 	Nonce       string
 	Type        string
 	ContentType string
+	X5c         []*x509.Certificate
 }
 
 // sanitized produces a cleaned-up header object from the raw JSON.
@@ -154,6 +159,7 @@ func (parsed rawHeader) sanitized() Header {
 		Nonce:       parsed.Nonce,
 		Type:        parsed.Typ,
 		ContentType: parsed.Cty,
+		X5c:         parseX509Certificates(parsed.X5c),
 	}
 }
 
@@ -208,6 +214,9 @@ func (dst *rawHeader) merge(src *rawHeader) {
 	if dst.Cty == "" {
 		dst.Cty = src.Cty
 	}
+	if dst.X5c == nil {
+		dst.X5c = src.X5c
+	}
 }
 
 // Get JOSE name of curve
@@ -236,4 +245,20 @@ func curveSize(crv elliptic.Curve) int {
 	}
 
 	return div + 1
+}
+
+func parseX509Certificates(x509StringArray []string) []*x509.Certificate {
+	result := make([]*x509.Certificate, len(x509StringArray))
+	for i, cert := range x509StringArray {
+		raw, err := base64.StdEncoding.DecodeString(cert)
+		if err != nil {
+			log.Printf("Failed to base 64 decode %dth certificate in `x5c` array, skipping!", i)
+		}
+		result[i], err = x509.ParseCertificate(raw)
+		if err != nil {
+			log.Printf("Failed to parse %dth x509 certificate in `x5c` array, skipping!", i)
+		}
+	}
+
+	return result
 }
