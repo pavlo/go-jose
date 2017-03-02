@@ -20,6 +20,7 @@ import (
 	"crypto/elliptic"
 	"crypto/x509"
 	"encoding/base64"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"log"
@@ -152,6 +153,7 @@ type Header struct {
 
 // sanitized produces a cleaned-up header object from the raw JSON.
 func (parsed rawHeader) sanitized() Header {
+
 	return Header{
 		KeyID:       parsed.Kid,
 		JSONWebKey:  parsed.Jwk,
@@ -161,6 +163,7 @@ func (parsed rawHeader) sanitized() Header {
 		ContentType: parsed.Cty,
 		X5c:         parseX509Certificates(parsed.X5c),
 	}
+
 }
 
 // Merge headers from src into dst, giving precedence to headers from l.
@@ -254,9 +257,18 @@ func parseX509Certificates(x509StringArray []string) []*x509.Certificate {
 		if err != nil {
 			log.Printf("Failed to base 64 decode %dth certificate in `x5c` array, skipping!", i)
 		}
-		result[i], err = x509.ParseCertificate(raw)
+
+		// this might be PEM encoded certificate, let's make it ASN1. DER first so x509.ParseCertificate can digest it
+		block, _ := pem.Decode(raw)
+		if block != nil {
+			raw = block.Bytes
+		}
+
+		cert, err := x509.ParseCertificate(raw)
 		if err != nil {
 			log.Printf("Failed to parse %dth x509 certificate in `x5c` array, skipping!", i)
+		} else {
+			result[i] = cert
 		}
 	}
 
